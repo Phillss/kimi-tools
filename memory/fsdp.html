@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Kimi-K3 FSDPTurbo 显存建模</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: light only;
+      --bg: #e6ecf5;
+      --card: rgba(255, 255, 255, 0.84);
+      --line: #c9d4e4;
+      --text: #141d2e;
+      --muted: #5a6a82;
+      --accent: #1783ff;
+      --ok: #0f7a45;
+      --warn: #9a5b00;
+      --bad: #c43d3d;
+      --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+      --sans: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --shadow: 0 10px 30px rgba(20, 29, 46, 0.07);
+      --c-w: #3b5bcc;
+      --c-g: #7c6bc4;
+      --c-o: #2a9d8f;
+      --c-a: #d4a017;
+      --c-d: #e76f51;
+      --c-h: #4a90a4;
+      --c-f: #9aa5ab;
+      --c-p: #6c8ead;
+      --c-os: #5c6b73;
+    }
+    * { box-sizing: border-box; }
+    html { min-height: 100%; background: #d8e2f0; }
+    body {
+      margin: 0; min-height: 100%; color: var(--text);
+      font: 16px/1.55 var(--sans);
+      background:
+        radial-gradient(920px 460px at 8% -12%, rgba(23, 131, 255, 0.18), transparent 58%),
+        radial-gradient(720px 420px at 96% 4%, rgba(124, 107, 196, 0.12), transparent 52%),
+        linear-gradient(168deg, #e0e8f5 0%, #eef2f6 46%, #f4eef6 100%);
+    }
+    header {
+      background: rgba(255, 255, 255, 0.6);
+      backdrop-filter: blur(18px);
+      border-bottom: 1px solid rgba(201, 212, 228, 0.85);
+    }
+    .header-inner { max-width: 1280px; margin: 0 auto; padding: 18px 22px 20px; }
+    .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    header a.home {
+      color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 600;
+      letter-spacing: .06em; display: inline-block; margin-bottom: 8px;
+    }
+    header a.home:hover { color: var(--accent); }
+    header h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.04em; line-height: 1.15; }
+    header p { margin: 8px 0 0; font-size: 14px; color: var(--muted); max-width: 52em; line-height: 1.55; }
+    header p code {
+      font: 600 12px/1.4 var(--mono); color: var(--text);
+      background: rgba(255,255,255,.7); border-radius: 6px; padding: 1px 6px;
+    }
+    .top-actions { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; padding-top: 22px; }
+    .top-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      height: 34px; padding: 0 12px;
+      border: 1px solid var(--line); border-radius: 999px;
+      background: rgba(255,255,255,.72); color: var(--text);
+      text-decoration: none; font: 600 13px/1 var(--sans);
+    }
+    .top-link:hover { border-color: var(--accent); color: var(--accent); }
+    .top-link svg { width: 14px; height: 14px; }
+    .app {
+      display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 18px;
+      max-width: 1280px; margin: 0 auto; padding: 20px 22px 56px; align-items: start;
+    }
+    .side, .main { display: grid; gap: 14px; }
+    .side { position: sticky; top: 14px; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+      padding: 18px 18px 16px; box-shadow: var(--shadow); backdrop-filter: blur(10px);
+    }
+    .kicker {
+      margin: 0 0 12px; font: 600 11px/1 var(--mono); letter-spacing: .18em;
+      text-transform: uppercase; color: var(--accent);
+    }
+    h3.sec { margin: 0 0 12px; font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+    .chip {
+      font-size: 12px; font-weight: 600; background: #eef2f8; color: #3d4d66;
+      border-radius: 99px; padding: 4px 10px;
+    }
+    .chip.ok { background: #e4f5ea; color: var(--ok); }
+    .chip.warn { background: #fff1d6; color: var(--warn); }
+    .chip.bad { background: #fde8e8; color: var(--bad); }
+    .err { color: var(--bad); font-size: 13px; margin-top: 8px; }
+    .err:empty { display: none; }
+    .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+    .fields.one { grid-template-columns: 1fr; }
+    label.f { font-size: 13px; font-weight: 600; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+    label.chk { font-size: 14px; color: var(--text); display: flex; align-items: center; gap: 9px; }
+    input[type=number], input[type=text], select {
+      width: 100%; height: 40px; font: 500 14px/1.2 var(--mono); padding: 8px 11px;
+      border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.92); color: var(--text);
+    }
+    input[type=text] { font-family: var(--sans); letter-spacing: 0; }
+    input:focus, select:focus {
+      outline: none; border-color: #4a9cff;
+      box-shadow: 0 0 0 3px rgba(23, 131, 255, 0.14);
+    }
+    input.bad { border-color: var(--bad); background: #fff6f6; }
+    .checks { display: grid; gap: 9px; margin-top: 12px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .hero .lab {
+      font: 600 12px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted);
+    }
+    .hero .num { font: 700 52px/1.05 var(--mono); letter-spacing: -0.05em; margin: 10px 0 6px; }
+    .hero .num span { font-size: 20px; font-weight: 500; color: var(--muted); margin-left: 8px; }
+    .blocks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .blk {
+      border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px;
+      background: linear-gradient(180deg, rgba(255,255,255,.9), rgba(244,247,252,.75));
+    }
+    .blk .n { font: 600 12px/1.3 var(--sans); color: var(--muted); }
+    .blk .v { font: 650 18px/1.2 var(--mono); margin-top: 6px; }
+    .blk .p { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .bar { height: 14px; background: #e0e8f2; border-radius: 99px; overflow: hidden; display: flex; margin: 6px 0 10px; }
+    .bar > i { display: block; height: 100%; }
+    .map h2 { margin: 0 0 14px; font-size: 20px; font-weight: 700; letter-spacing: -0.03em; }
+    .part { border-top: 1px solid var(--line); padding: 14px 0; }
+    .part:first-of-type { border-top: 0; padding-top: 0; }
+    .part-h { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 16px; }
+    .part-h b { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 8px; }
+    .part-h .g { font: 650 16px var(--mono); }
+    .eq {
+      margin: 10px 0 0; padding: 10px 12px; border-radius: 10px;
+      background: #f2f6fc; border: 1px solid #dfe7f2;
+      font: 600 13px/1.5 var(--mono); color: #1b2420;
+      white-space: nowrap; overflow-x: auto;
+    }
+    .sub { margin: 8px 0 0; padding: 0; list-style: none; }
+    .sub li { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 6px 0; font-size: 14px; }
+    .sub .fml { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+    .sub .sv { font-family: var(--mono); }
+    .tree { margin: 4px 0 0; }
+    .tree details { border-top: 1px solid #e6ecf5; }
+    .tree > details:first-child { border-top: 0; }
+    .tree summary { display: block; cursor: pointer; list-style: none; padding: 0; }
+    .tree summary::-webkit-details-marker, .tree summary::marker { display: none; content: ""; }
+    .tree .sum {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px;
+      align-items: start; padding: 7px 0;
+    }
+    .tree summary .nm::before {
+      content: "▸"; display: inline-block; width: 1.15em;
+      color: var(--accent); font-size: 12px;
+    }
+    .tree details[open] > summary .nm::before { content: "▾"; }
+    .tree summary:hover .nm { color: var(--accent); }
+    .tree .kids { padding-left: 16px; }
+    .tree .kids .sub { margin: 0; }
+    .tree .leaf {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px;
+      padding: 6px 0 6px 1.15em; border-top: 1px solid #e6ecf5; font-size: 14px;
+    }
+    .tree .nm { font-size: 14px; font-weight: 500; }
+    .tree .fml { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+    .tree .sv { font-family: var(--mono); font-size: 14px; white-space: nowrap; }
+    .note { margin: 10px 0 0; font-size: 13px; color: var(--muted); line-height: 1.55; }
+    .nline {
+      margin: 8px 0 0;
+      font: 600 13px/1.5 var(--mono); color: #1b2420;
+      white-space: nowrap; overflow-x: auto;
+    }
+    .foot { font-size: 13px; color: var(--muted); margin-top: 10px; }
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 1fr; }
+      .side { position: static; }
+      .blocks { grid-template-columns: 1fr 1fr; }
+      .hero .num { font-size: 38px; }
+      header h1 { font-size: 22px; }
+      .header-row { flex-direction: column; }
+      .top-actions { padding-top: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="header-row">
+        <div>
+          <a class="home" href="../">← KIMI 小工具</a>
+          <h1>Kimi-K3 FSDPTurbo 显存建模</h1>
+          <p>单卡显存估算 · FSDP2 + TP + EP + Ulysses CP · 激活值按 <code>kimi_memory.py</code> 逐算子清单</p>
+        </div>
+        <div class="top-actions">
+          <a class="top-link" href="https://github.com/zyang6/qwen-tools" target="_blank" rel="noopener noreferrer" aria-label="参考仓库">
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>
+            参考
+          </a>
+          <a class="top-link" href="https://github.com/zyang6/qwen-tools/issues/new?title=%5Bmemory%2Fkimi-fsdp%5D%20%E5%8F%8D%E9%A6%88" target="_blank" rel="noopener noreferrer" aria-label="反馈问题">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="13"></line><line x1="12" y1="16.5" x2="12.01" y2="16.5"></line></svg>
+            反馈
+          </a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="app">
+    <aside class="side">
+      <section class="card">
+        <p class="kicker">Configuration</p>
+        <label class="f">模型
+          <select id="ovModel">
+            <option value="Kimi-K3">Kimi-K3 (2.8T / 104B activated)</option>
+          </select>
+        </label>
+        <label class="f" style="margin-top:10px">或填 ModelScope/HF 仓库
+          <input id="ovRepo" type="text" placeholder="moonshotai/Kimi-K3" />
+        </label>
+        <div class="chips" id="chips"></div>
+        <div class="err" id="err"></div>
+      </section>
+
+      <section class="card">
+        <h3 class="sec">切分配置 (FSDPTurbo)</h3>
+        <div class="fields">
+          <label class="f">FSDP 卡数 P<input id="ovP" type="number" min="1" step="1" /></label>
+          <label class="f">TP<input id="ovTP" type="number" min="1" step="1" /></label>
+          <label class="f">EP<input id="ovEP" type="number" min="1" step="1" /></label>
+          <label class="f">Ulysses CP<input id="ovCP" type="number" min="1" step="1" /></label>
+          <label class="f">EFSDP (专家分片)<input id="ovEFSDP" type="number" min="1" step="1" /></label>
+          <label class="f">单卡容量 GiB<input id="ovHbm" type="number" min="0" step="1" /></label>
+          <label class="f">HCCL_BUFFSIZE MB<input id="ovHccl" type="number" min="0" step="1" /></label>
+          <label class="f">MTP 层数<input id="ovMtp" type="number" min="0" step="1" /></label>
+        </div>
+        <p class="muted" id="splitHint"></p>
+        <div class="err" id="splitErr"></div>
+      </section>
+
+      <section class="card">
+        <h3 class="sec">训练数据</h3>
+        <div class="fields">
+          <label class="f">实际 seq<input id="ovSeq" type="number" min="0" step="1" /></label>
+          <label class="f">micro_batch_size<input id="ovMbs" type="number" min="0" step="1" /></label>
+          <label class="f">chunk_mbs<input id="ovChunk" type="number" min="0" step="1" /></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3 class="sec">显存优化</h3>
+        <div class="fields one">
+          <label class="f">param prefetch<input id="ovPrefetch" type="number" min="0" step="1" /></label>
+          <label class="f">chunk_loss_size<input id="ovChunkLoss" type="number" min="0" step="1" /></label>
+          <label class="f">mm_merge_chunk_tokens<input id="ovMmMerge" type="number" min="0" step="1" /></label>
+        </div>
+        <div class="checks">
+          <label class="chk"><input id="ovRecompute" type="checkbox" /> recompute 层激活</label>
+          <label class="chk"><input id="ovOffload" type="checkbox" /> activation offload</label>
+          <label class="chk"><input id="ovGmm" type="checkbox" /> grouped expert matmul (GMM)</label>
+          <label class="chk"><input id="ovFreeze" type="checkbox" /> 冻结 ViT</label>
+          <label class="chk"><input id="ovAdamOff" type="checkbox" /> Adam 在 CPU</label>
+        </div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section class="card hero">
+        <div class="lab">Estimated per device</div>
+        <div class="num" id="vTotal">—<span>GiB</span></div>
+        <div class="muted" id="vTotalSub">npu-smi Used 口径</div>
+        <div class="bar" id="hbmBar" style="margin-top:14px;"></div>
+        <div class="muted" id="vRemain"></div>
+      </section>
+
+      <section class="card">
+        <p class="kicker">Breakdown</p>
+        <div class="blocks" id="blocks"></div>
+      </section>
+
+      <section class="card map">
+        <p class="kicker">Memory map</p>
+        <h2>显存构成</h2>
+        <div id="mapBody"></div>
+        <p class="foot" id="mapFoot"></p>
+      </section>
+    </main>
+  </div>
+
+<script>
+const GIB = 1024 ** 3;
+const MIB = 1024 ** 2;
+const BF16 = 2, FP32 = 4;
+const COLORS = {
+  weight: "var(--c-w)", grad: "var(--c-g)", adam: "var(--c-o)", act: "var(--c-a)",
+  dyn: "var(--c-d)", hccl: "var(--c-h)", frag: "var(--c-f)", pta: "var(--c-p)", os: "var(--c-os)",
+};
+
+// Kimi-K3 模型参数（来自 Kimi-K3/README.md + configuration_kimi_k3.py + kimi_memory.py）
+const DEFAULT_K3 = {
+  vocab: 163840, hidden: 7168, layers: 93,
+  // 注意力混合：69 KDA + 24 Gated MLA
+  kdaLayers: 69, mlaLayers: 24,
+  nHeads: 96,
+  // KDA
+  kdaHeadDim: 128, kdaChunkSize: 64,
+  // Gated MLA
+  qLoraRank: 1536, kvLoraRank: 512,
+  qkNopeHeadDim: 128, qkRopeHeadDim: 64, vHeadDim: 128,
+  faStatsWidth: 8,
+  // MoE (Stable LatentMoE)
+  experts: 896, topk: 16, sharedExperts: 2,
+  moeInter: 3072,        // D_MOE，专家中间维度
+  latentMoeDim: 3584,    // D_PART，latent routing 维度
+  denseInter: 33792,     // D_DENSE，第 1 层 dense FFN
+  firstKDense: 1,        // 前 1 层 dense
+  // Vision (MoonViT-V2, 401M)
+  vitDepth: 27, vitHidden: 1024, vitInter: 4096, vitOut: 7168,
+  vitPatch: 14, vitQkv: 1536,
+  // 其它
+  tie: false, actFn: "situglu", quant: "mxfp4_w_mxfp8_a",
+  contextLen: 1048576,
+  arch: "KimiK3ForConditionalGeneration",
+};
+
+const EMPTY_MODEL = { ...DEFAULT_K3, vocab: 0, hidden: 0, layers: 0 };
+
+function defaultTrain() {
+  return {
+    P: 16, TP: 1, EP: 16, CP: 2, EFSDP: 1,
+    mbs: 1, seq: 2048, chunk: 0,
+    prefetch: 1, chunkLoss: 1024, mmMerge: 0,
+    recompute: true, offload: false, gmm: true, freezeVisual: false, adamOff: true,
+    hbm: 64, hcclMB: 200, mtp: 0,
+    fragG: 1, ptaG: 1, osG: 3.5,
+  };
+}
+
+const S = {
+  modelName: "Kimi-K3",
+  weightRepo: "moonshotai/Kimi-K3",
+  model: { ...DEFAULT_K3 },
+  train: defaultTrain(),
+};
+
+function $(id) { return document.getElementById(id); }
+function pick(obj, keys, fb) {
+  if (!obj) return fb;
+  for (const k of keys) if (obj[k] != null) return obj[k];
+  return fb;
+}
+function isNum(x) { return typeof x === "number" && Number.isFinite(x); }
+function fmtG(x) { return isNum(x) ? (Math.round(x * 1000) / 1000).toFixed(3) : "null"; }
+function fmtN(x) { return isNum(x) ? Math.round(x).toLocaleString("en-US") : "null"; }
+function mem(x) { return isNum(x) ? fmtG(x) + " GiB" : "null"; }
+function sumNum() {
+  let s = 0;
+  for (const x of arguments) { if (!isNum(x)) return null; s += x; }
+  return s;
+}
+function readNum(id) {
+  const raw = String($(id).value ?? "").trim();
+  if (raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+function writeNum(id, v) { $(id).value = v == null ? "" : String(v); }
+function pct(part, tot) {
+  if (!isNum(part) || !isNum(tot) || tot === 0) return "null";
+  return (part / tot * 100).toFixed(1) + "%";
+}
+function posOk(x) { return isNum(x) && x > 0; }
+function intOk(x) { return Number.isInteger(x) && x > 0; }
+
+// Kimi-K3 参数计数：KDA + Gated MLA + LatentMoE + Dense FFN + ViT
+function countParams(m) {
+  const V = m.vocab, H = m.hidden, L = m.layers;
+  const nH = m.nHeads;
+  const L_KDA = m.kdaLayers, L_MLA = m.mlaLayers;
+  const L_DENSE = m.firstKDense, L_MOE = L - L_DENSE;
+
+  const embed = V * H;
+  const lm = m.tie ? 0 : V * H;
+  const finalNorm = H;
+
+  // KDA 单层（参考 modeling_kimi_linear.py + kimi_memory.py 模块清单）
+  // q/k/v_proj + o_proj + decay gate(f_a/f_b) + beta(b_proj) + output gate(g_proj) + norms
+  const kdaHd = nH * m.kdaHeadDim;  // 96 × 128 = 12288
+  const kdaPer =
+    3 * H * kdaHd +           // q/k/v_proj: H × (nH × kdaHeadDim) × 3
+    kdaHd * H +               // o_proj: (nH × kdaHeadDim) × H
+    2 * H * kdaHd +           // f_a_proj + f_b_proj (decay gate): ~2 × H × kdaHd
+    H * nH +                  // b_proj (beta): H × nH
+    H * kdaHd +               // g_proj (output gate): H × kdaHd
+    2 * H +                   // input/post layernorm
+    nH * m.kdaHeadDim +       // dt_bias
+    nH +                      // A_log
+    2 * kdaHd;                // o_norm gamma/beta + conv kernels (近似)
+
+  // Gated MLA 单层（参考 DeepSeek V3 MLA + Kimi 的 gate 增强）
+  const qkTotal = m.qkNopeHeadDim + m.qkRopeHeadDim;  // 128 + 64 = 192
+  const mlaPer =
+    H * m.qLoraRank +                 // q_a_proj: H × qLoraRank
+    m.qLoraRank +                     // q_a_layernorm
+    m.qLoraRank * nH * qkTotal +      // q_b_proj: qLoraRank × nH × (qkNope + qkRope)
+    H * (m.kvLoraRank + m.qkRopeHeadDim) + // kv_a_proj_with_mqa
+    m.kvLoraRank +                    // kv_a_layernorm
+    m.kvLoraRank * nH * qkTotal +     // kv_b_proj: kvLoraRank × nH × (qkNope + qkRope)
+    H * nH * m.vHeadDim +             // g_proj (gate, Gated MLA 特有): H × nH × vHead
+    nH * m.vHeadDim * H +             // o_proj: (nH × vHead) × H
+    2 * H;                            // norms
+
+  // Dense MLP 单层（第 1 层）
+  const denseMlp = 3 * H * m.denseInter;  // 3 × 7168 × 33792
+
+  // LatentMoE 单层（Stable LatentMoE: D_PART 路由 + D_MOE 专家）
+  const E = m.experts, D_PART = m.latentMoeDim, D_MOE = m.moeInter, nShared = m.sharedExperts;
+  const moeGate = H * D_PART;                       // router: H → D_PART
+  const moeRouted = E * 3 * D_PART * D_MOE;         // E × (gate_up 2× + down 1×) × D_PART × D_MOE
+  const moeShared = nShared * 3 * H * D_MOE;        // shared: 3 × H × D_MOE × nShared
+  const moeOutput = D_PART * H;                     // latent → H output proj
+  const moeNorm = D_PART + nShared * D_MOE + 2 * H; // routed/shared norms
+  const moeOther = moeGate + moeShared + moeOutput + moeNorm;
+  const moePer = moeRouted + moeOther;
+
+  const mtp = m.mtp || 0;
+  const mtpPer = moePer + 2 * H + (mlaPer + kdaPer) / 2;  // 近似
+  const mtpN = mtp * mtpPer;
+
+  const kdaN = L_KDA * kdaPer;
+  const mlaN = L_MLA * mlaPer;
+  const moeN = L_MOE * moePer;
+  const denseN = L_DENSE * denseMlp;
+  const layerNormN = L * 2 * H;
+  const textN = embed + lm + finalNorm + kdaN + mlaN + denseN + moeN + layerNormN + mtpN;
+
+  // ViT (MoonViT-V2, ~401M)
+  let vit = 0, vitPatch = 0, vitBlock = 0, vitMerger = 0;
+  if (m.vitDepth > 0 && m.vitHidden > 0) {
+    const Hv = m.vitHidden, Iv = m.vitInter, out = m.vitOut, qkv = m.vitQkv;
+    vitPatch = 3 * m.vitPatch * m.vitPatch * qkv + qkv;  // patch embed (近似 in_ch=3)
+    vitBlock = qkv * 3 * Hv + 3 * Hv + Hv * Hv + Hv + Hv * Iv + Iv + Iv * Hv + Hv + 2 * Hv;
+    vitMerger = Hv + Hv * Hv + Hv * out + out;
+    vit = vitPatch + m.vitDepth * vitBlock + vitMerger;
+  }
+
+  const N = textN + vit;
+  const nExpert = L_MOE * moeRouted;  // 路由专家参数（用于 EP 切分）
+  return {
+    N, nExpert, nDense: N - nExpert, textN, vit,
+    embed, lm, finalNorm, layerNormN,
+    kdaPer, kdaN, L_KDA,
+    mlaPer, mlaN, L_MLA,
+    denseMlp, denseN, L_DENSE,
+    moeGate, moeRouted, moeShared, moeOutput, moeNorm, moeOther, moePer, moeN, L_MOE,
+    mtpN, mtp,
+    vitPatch, vitBlock, vitMerger, vitDepth: m.vitDepth || 0,
+    V, H, L, E, D_PART, D_MOE, nShared, nH,
+    qLoraRank: m.qLoraRank, kvLoraRank: m.kvLoraRank,
+    qkNope: m.qkNopeHeadDim, qkRope: m.qkRopeHeadDim, vHead: m.vHeadDim,
+    kdaHeadDim: m.kdaHeadDim, kdaChunkSize: m.kdaChunkSize, faStats: m.faStatsWidth,
+    topk: m.topk, tie: !!m.tie, denseInter: m.denseInter, latentMoeDim: m.latentMoeDim, moeInter: m.moeInter,
+  };
+}
+
+// 激活值：kimi_memory.py 逐算子清单 closed form（bytes）
+// 单层激活，T = B × S（已按 CP 切分）
+function actKDA(T, p) {
+  // closed: T × (4D + 22×nH×kdaHeadDim + 4×nH×kdaChunkSize + 4×nH)
+  return T * (4 * p.H + 22 * p.nH * p.kdaHeadDim + 4 * p.nH * p.kdaChunkSize + 4 * p.nH);
+}
+function actMLA(T, p) {
+  // closed: T × (4D + 4×qLora + 4×kvLora + 2×qkRope + 8×nH×(qkNope+qkRope) + 6×nH×vHead + 8×nH×faStats)
+  return T * (4 * p.H + 4 * p.qLoraRank + 4 * p.kvLoraRank + 2 * p.qkRope
+    + 8 * p.nH * (p.qkNope + p.qkRope) + 6 * p.nH * p.vHead + 8 * p.nH * p.faStats);
+}
+function actMLP(T, p) {
+  // closed: T × (4D + 6×denseInter)
+  return T * (4 * p.H + 6 * p.denseInter);
+}
+function actMOE(T, p) {
+  // closed: T × (8D + (8×topk+4)×D_PART + 6×(topk+shared)×D_MOE)
+  return T * (8 * p.H + (8 * p.topk + 4) * p.latentMoeDim + 6 * (p.topk + p.nShared) * p.moeInter);
+}
+function actEmbed(T, p) { return T * p.H * BF16; }
+function actLMHead(T, p, chunkLossSize) {
+  // bf16: T × D × 2 + T × V × 2；chunk_loss 开启时 lm_head 物化按 chunk
+  const tLogits = chunkLossSize > 0 ? chunkLossSize : T;
+  return T * p.H * BF16 + tLogits * p.V * BF16;
+}
+
+function compute(model, train) {
+  const p = countParams(model);
+  const P = train.P, TP = train.TP, EP = train.EP, CP = train.CP, EFSDP = train.EFSDP;
+  const pOk = posOk(P);
+  const warns = [], splitWarns = [];
+
+  // 切分校验
+  const checkInt = (name, x) => {
+    if (x == null) splitWarns.push(name + " 为空");
+    else if (!intOk(x)) splitWarns.push(name + " 须为正整数");
+  };
+  checkInt("P", P); checkInt("TP", TP); checkInt("EP", EP); checkInt("CP", CP); checkInt("EFSDP", EFSDP);
+  const splitOk = intOk(TP) && intOk(EP) && intOk(CP) && intOk(EFSDP);
+  if (splitOk && intOk(P)) {
+    if (P % TP !== 0) splitWarns.push("P=" + P + " 不能被 TP=" + TP + " 整除");
+    if (P % EP !== 0) splitWarns.push("P=" + P + " 不能被 EP=" + EP + " 整除");
+    if (P % CP !== 0) splitWarns.push("P=" + P + " 不能被 CP=" + CP + " 整除");
+    if (EP % EFSDP !== 0) splitWarns.push("EP=" + EP + " 不能被 EFSDP=" + EFSDP + " 整除");
+  }
+  const cardsOk = splitOk && intOk(P) && (P % TP === 0) && (P % EP === 0) && (P % CP === 0) && (EP % EFSDP === 0);
+
+  // 静态：N/P × 12（fp32 参数 + Adam），Adam CPU 则优化器为 0
+  const perCard = pOk && cardsOk ? p.N / P : null;
+  const bParam = 4, bAdam = 8;
+  const paramG = isNum(perCard) ? perCard * bParam / GIB : null;
+  const adamG = isNum(perCard) ? perCard * bAdam / GIB : null;
+  const adamGpu = train.adamOff ? 0 : adamG;
+  const staticG = sumNum(paramG, adamGpu);
+
+  // 梯度（高峰）：perCard × 4（bf16）
+  const gradG = isNum(perCard) ? perCard * BF16 * 2 / GIB : null;  // bf16 grad = 2×, fp32 reduce → 简化为 4×perCard/GIB
+
+  // 动态内存：FSDP wrap=experts 模式（Kimi-K3 默认）
+  // U = (gate_up + down) × 2 / EP （路由专家 per-rank）
+  const expertNumel = p.moeRouted;  // E × 3 × D_PART × D_MOE
+  const expertPerRank = EP > 0 ? expertNumel / EP : null;
+  const U = isNum(expertPerRank) ? expertPerRank * BF16 / GIB : null;  // all-gather 单位
+  const prefetch = train.prefetch || 0;
+  const prefG = isNum(U) ? prefetch * U : 0;
+  const agG = U, copyG = U;
+  const reduceInG = isNum(U) ? U * 2 : null;  // fp32 reduce 输入
+  const gmmG = train.gmm ? U : 0;  // GMM grad_weight
+  const dynG = sumNum(agG, copyG, prefG, reduceInG, gmmG);
+
+  // 序列与 token 数
+  const seq = train.seq, mbs = train.mbs, chunk = train.chunk;
+  let seqLocal = null, samplesFwd = null, tokens = null;
+  if (seq == null) warns.push("seq 为空，激活值为 null");
+  else if (seq < 0) warns.push("seq 为负数");
+  else {
+    seqLocal = CP > 0 ? seq / CP : seq;
+    if (isNum(chunk) && chunk > 0) samplesFwd = chunk;
+    else if (mbs == null) warns.push("mbs 为空且 chunk_mbs 未>0");
+    else if (mbs < 0) warns.push("mbs 为负数");
+    else samplesFwd = mbs;
+    if (isNum(samplesFwd)) tokens = samplesFwd * seqLocal;
+  }
+  const T = tokens;
+
+  // 激活值：kimi_memory.py 逐算子清单
+  let actG = null, mKDA = null, mMLA = null, mMLP = null, mMOE = null, mEmbed = null, mLMHead = null;
+  let liveLayers = 0, mmMergeG = 0;
+  if (isNum(T)) {
+    mKDA = actKDA(T, p);
+    mMLA = actMLA(T, p);
+    mMLP = actMLP(T, p);
+    mMOE = actMOE(T, p);
+    mEmbed = actEmbed(T, p);
+    const chunkLoss = train.chunkLoss || 0;
+    mLMHead = actLMHead(T, p, chunkLoss);
+
+    const recomputeOrOffload = train.recompute || train.offload;
+    liveLayers = recomputeOrOffload ? 1 : p.L;
+    if (recomputeOrOffload) {
+      // recompute：只留 1 层（取最大单层清单）
+      actG = Math.max(mKDA, mMLA, mMLP, mMOE) + mEmbed + mLMHead;
+    } else {
+      // 无 recompute：全层累加
+      actG = p.L_KDA * mKDA + p.L_MLA * mMLA + p.L_DENSE * mMLP + p.L_MOE * mMOE + mEmbed + mLMHead;
+    }
+    actG = actG / GIB;
+
+    // 多模态图文合并临时拷贝（仅多模态，mm_merge 开启时按块搬运）
+    if (train.mmMerge > 0) {
+      mmMergeG = train.mmMerge * p.H * BF16 / GIB;
+    } else {
+      mmMergeG = (isNum(seq) ? seq * p.H * BF16 / GIB : null);  // 全量拷贝
+    }
+    if (isNum(mmMergeG)) actG = sumNum(actG, mmMergeG);
+  }
+
+  // HCCL
+  const nComm = 1 + (EP > 1 ? 1 : 0) + (CP > 1 ? 1 : 0) + (TP > 1 ? 1 : 0);
+  const hcclMB = train.hcclMB;
+  let hcclG = null;
+  if (hcclMB == null) warns.push("HCCL_BUFFSIZE 为空");
+  else if (hcclMB < 0) warns.push("HCCL_BUFFSIZE 为负数");
+  else hcclG = nComm * hcclMB * 2 / 1024;
+
+  const fragG = train.fragG, ptaG = train.ptaG, osG = train.osG;
+  const peakG = sumNum(staticG, gradG, dynG, actG);
+  const deviceG = sumNum(peakG, hcclG, fragG, ptaG, osG);
+
+  if (p.vitDepth > 0 && train.freezeVisual) warns.push("ViT 冻结：不计入 N");
+  if (!train.recompute && !train.offload) warns.push("未开 recompute/offload：激活按全层累加（高峰）");
+
+  return {
+    ...p, P, TP, EP, CP, EFSDP, cardsOk, splitWarns,
+    perCard, paramG, adamG, adamGpu, staticG, gradG,
+    expertNumel, expertPerRank, U, agG, copyG, prefG, reduceInG, gmmG, dynG,
+    seq, seqLocal, mbs, chunk, samplesFwd, tokens, T,
+    mKDA, mMLA, mMLP, mMOE, mEmbed, mLMHead, actG, liveLayers, mmMergeG,
+    nComm, hcclG, hcclMB, fragG, ptaG, osG, peakG, deviceG, warns,
+    recompute: !!train.recompute, offload: !!train.offload, adamOff: !!train.adamOff,
+    prefetch, chunkLoss: train.chunkLoss || 0, mmMerge: train.mmMerge || 0,
+  };
+}
+
+function readForm() {
+  const t = S.train;
+  t.P = readNum("ovP");
+  t.TP = readNum("ovTP");
+  t.EP = readNum("ovEP");
+  t.CP = readNum("ovCP");
+  t.EFSDP = readNum("ovEFSDP");
+  t.hbm = readNum("ovHbm");
+  t.hcclMB = readNum("ovHccl");
+  t.mtp = readNum("ovMtp");
+  S.model.mtp = isNum(t.mtp) ? Math.max(t.mtp, 0) : 0;
+  t.seq = readNum("ovSeq");
+  t.mbs = readNum("ovMbs");
+  t.chunk = readNum("ovChunk");
+  t.prefetch = readNum("ovPrefetch");
+  t.chunkLoss = readNum("ovChunkLoss");
+  t.mmMerge = readNum("ovMmMerge");
+  t.recompute = $("ovRecompute").checked;
+  t.offload = $("ovOffload").checked;
+  t.gmm = $("ovGmm").checked;
+  t.freezeVisual = $("ovFreeze").checked;
+  t.adamOff = $("ovAdamOff").checked;
+}
+
+function writeForm() {
+  const t = S.train;
+  $("ovModel").value = S.modelName;
+  writeNum("ovP", t.P);
+  writeNum("ovTP", t.TP);
+  writeNum("ovEP", t.EP);
+  writeNum("ovCP", t.CP);
+  writeNum("ovEFSDP", t.EFSDP);
+  writeNum("ovHbm", t.hbm);
+  writeNum("ovHccl", t.hcclMB);
+  writeNum("ovMtp", S.model.mtp);
+  writeNum("ovSeq", t.seq);
+  writeNum("ovMbs", t.mbs);
+  writeNum("ovChunk", t.chunk);
+  writeNum("ovPrefetch", t.prefetch);
+  writeNum("ovChunkLoss", t.chunkLoss);
+  writeNum("ovMmMerge", t.mmMerge);
+  $("ovRecompute").checked = !!t.recompute;
+  $("ovOffload").checked = !!t.offload;
+  $("ovGmm").checked = !!t.gmm;
+  $("ovFreeze").checked = !!t.freezeVisual;
+  $("ovAdamOff").checked = !!t.adamOff;
+}
+
+function partsOf(r) {
+  return [
+    { id: "weight", name: "权重", g: r.paramG, color: COLORS.weight },
+    { id: "adam", name: "优化器", g: r.adamGpu, color: COLORS.adam },
+    { id: "grad", name: "梯度", g: r.gradG, color: COLORS.grad },
+    { id: "dyn", name: "动态内存", g: r.dynG, color: COLORS.dyn },
+    { id: "act", name: "激活值", g: r.actG, color: COLORS.act },
+    { id: "hccl", name: "HCCL", g: r.hcclG, color: COLORS.hccl },
+    { id: "frag", name: "内存碎片", g: r.fragG, color: COLORS.frag },
+    { id: "pta", name: "PTA", g: r.ptaG, color: COLORS.pta },
+    { id: "os", name: "Device OS", g: r.osG, color: COLORS.os },
+  ];
+}
+
+function render() {
+  const r = compute(S.model, S.train);
+  const parts = partsOf(r);
+  const tot = r.deviceG;
+  const hbm = S.train.hbm;
+  const blocked = !r.cardsOk;
+
+  if (blocked) {
+    $("vTotal").innerHTML = "非法";
+    $("vTotalSub").textContent = (r.splitWarns || []).join("；");
+  } else {
+    $("vTotal").innerHTML = isNum(tot) ? fmtG(tot) + "<span>GiB</span>" : "null";
+    $("vTotalSub").textContent = !isNum(tot)
+      ? "配置不完整或除数为 0"
+      : "npu-smi Used 口径（含 HCCL / 碎片 / PTA / OS）";
+  }
+  if (!isNum(hbm)) $("vRemain").textContent = "单卡容量为空";
+  else if (!r.cardsOk) $("vRemain").textContent = "切分与 P 不匹配";
+  else if (!isNum(tot)) $("vRemain").textContent = "预估为 null";
+  else $("vRemain").textContent = "相对单卡 " + hbm + " GiB · 余量 " + fmtG(hbm - tot) + " GiB";
+  $("hbmBar").innerHTML = !blocked && isNum(tot) && tot > 0
+    ? parts.map((p) => `<i style="width:${Math.max(0, (isNum(p.g) ? p.g : 0) / tot * 100)}%;background:${p.color}"></i>`).join("")
+    : "";
+
+  $("blocks").innerHTML = parts.map((p) =>
+    `<div class="blk"><div class="n">${p.name}</div><div class="v">${mem(p.g)}</div><div class="p">${pct(p.g, tot)} of total</div></div>`
+  ).join("");
+
+  const chips = [
+    `<span class="chip warn">MOE</span>`,
+    `<span class="chip">KDA+MLA</span>`,
+    `<span class="chip">VL</span>`,
+    `<span class="chip ok">${r.recompute || r.offload ? "recompute" : "full act"}</span>`,
+  ];
+  if (r.adamOff) chips.push(`<span class="chip ok">Adam CPU</span>`);
+  if (r.chunkLoss > 0) chips.push(`<span class="chip ok">chunk_loss</span>`);
+  $("chips").innerHTML = chips.join("");
+  $("err").textContent = (r.warns || []).join("；");
+  $("splitErr").textContent = (r.splitWarns || []).join("；");
+  $("splitHint").textContent = r.cardsOk
+    ? `DP=FSDP=${r.P}/(TP×CP)=${r.P}/(${r.TP}×${r.CP})，EDP=EP/EFSDP=${r.EP}/${r.EFSDP}`
+    : "";
+  ["ovP", "ovTP", "ovEP", "ovCP", "ovEFSDP"].forEach((id) => {
+    const el = $(id);
+    if (el) el.classList.toggle("bad", !r.cardsOk);
+  });
+
+  const li = (title, fml, val) =>
+    `<li><div>${title}<div class="fml">${fml}</div></div><div class="sv">${val}</div></li>`;
+  const leaf = (title, fml, val) =>
+    `<div class="leaf"><div>${title}<div class="fml">${fml}</div></div><div class="sv">${val}</div></div>`;
+  const branch = (title, fml, val, inner, open) =>
+    `<details${open ? " open" : ""}><summary><div class="sum"><div class="nm">${title}${fml ? `<div class="fml">${fml}</div>` : ""}</div><div class="sv">${val}</div></div></summary><div class="kids">${inner}</div></details>`;
+
+  // 权重公式
+  const wEq = !isNum(r.N) || !isNum(r.P) || r.P === 0
+    ? `N/P × 4 = null`
+    : `N/P × 4 = ${fmtN(r.N)} / ${r.P} × 4 = ${fmtG(r.paramG)} GiB`;
+  const gEq = !isNum(r.N) || !isNum(r.P) || r.P === 0
+    ? `N/P × 4 = null`
+    : `N/P × 4 = ${fmtN(r.N)} / ${r.P} × 4 = ${fmtG(r.gradG)} GiB`;
+  const oEq = r.adamOff
+    ? `Adam 在 CPU = 0 GiB`
+    : (!isNum(r.N) || !isNum(r.P) ? `N/P × 8 = null` : `N/P × 8 = ${fmtN(r.N)} / ${r.P} × 8 = ${fmtG(r.adamGpu)} GiB`);
+
+  // 权重树：N = Text + ViT
+  const vocabN = r.embed + r.lm + r.finalNorm;
+  const textKids =
+    branch("词表", "embed + lm_head + norm", fmtN(vocabN),
+      leaf("embed", `V × H = ${r.V} × ${r.H}`, fmtN(r.embed)) +
+      leaf("lm_head", r.tie ? "tie" : `V × H = ${r.V} × ${r.H}`, fmtN(r.lm)) +
+      leaf("最终 RMSNorm", `H`, fmtN(r.finalNorm))) +
+    branch(`${r.L_KDA} 层 KDA`, `${r.L_KDA} × ${fmtN(r.kdaPer)}`, fmtN(r.kdaN),
+      leaf("q/k/v_proj", `3 × H × (nH × kdaHeadDim) = 3 × ${r.H} × ${r.nH * r.kdaHeadDim}`, fmtN(3 * r.H * r.nH * r.kdaHeadDim)) +
+      leaf("o_proj", `(nH × kdaHeadDim) × H`, fmtN(r.nH * r.kdaHeadDim * r.H)) +
+      leaf("decay gate (f_a/f_b)", `~2 × H × (nH × kdaHeadDim)`, fmtN(2 * r.H * r.nH * r.kdaHeadDim)) +
+      leaf("beta (b_proj)", `H × nH`, fmtN(r.H * r.nH)) +
+      leaf("output gate (g_proj)", `H × (nH × kdaHeadDim)`, fmtN(r.H * r.nH * r.kdaHeadDim)) +
+      leaf("norms/conv/bias", `~小`, fmtN(r.kdaPer - 7 * r.H * r.nH * r.kdaHeadDim - r.H * r.nH))) +
+    branch(`${r.L_MLA} 层 Gated MLA`, `${r.L_MLA} × ${fmtN(r.mlaPer)}`, fmtN(r.mlaN),
+      leaf("q_a_proj", `H × qLoraRank = ${r.H} × ${r.qLoraRank}`, fmtN(r.H * r.qLoraRank)) +
+      leaf("q_b_proj", `qLoraRank × nH × (qkNope+qkRope)`, fmtN(r.qLoraRank * r.nH * (r.qkNope + r.qkRope))) +
+      leaf("kv_a_proj", `H × (kvLoraRank + qkRope)`, fmtN(r.H * (r.kvLoraRank + r.qkRope))) +
+      leaf("kv_b_proj", `kvLoraRank × nH × (qkNope+qkRope)`, fmtN(r.kvLoraRank * r.nH * (r.qkNope + r.qkRope))) +
+      leaf("g_proj (gate)", `H × nH × vHead`, fmtN(r.H * r.nH * r.vHead)) +
+      leaf("o_proj", `(nH × vHead) × H`, fmtN(r.nH * r.vHead * r.H))) +
+    branch(`${r.L_DENSE} 层 Dense MLP`, `3 × H × denseInter`, fmtN(r.denseN),
+      leaf("gate_up + down", `3 × ${r.H} × ${r.denseInter}`, fmtN(r.denseMlp))) +
+    branch(`${r.L_MOE} 层 LatentMoE`, `${r.L_MOE} × ${fmtN(r.moePer)}`, fmtN(r.moeN),
+      leaf("router (gate)", `H × D_PART = ${r.H} × ${r.latentMoeDim}`, fmtN(r.moeGate)) +
+      leaf("routed experts", `E × 3 × D_PART × D_MOE = ${r.E} × 3 × ${r.latentMoeDim} × ${r.moeInter}`, fmtN(r.moeRouted)) +
+      leaf("shared experts", `nShared × 3 × H × D_MOE = ${r.nShared} × 3 × ${r.H} × ${r.moeInter}`, fmtN(r.moeShared)) +
+      leaf("output proj", `D_PART × H`, fmtN(r.moeOutput)) +
+      leaf("norms", `D_PART + nShared × D_MOE + 2H`, fmtN(r.moeNorm))) +
+    leaf("L 层 RMSNorm", `L × 2H = ${r.L} × ${2 * r.H}`, fmtN(r.layerNormN)) +
+    (r.mtp > 0 ? leaf("MTP", `${r.mtp} 层`, fmtN(r.mtpN)) : "");
+
+  let vitKids;
+  if (r.vitDepth > 0) {
+    vitKids = r.freezeVisual
+      ? leaf("冻结", "不计入 N", "0")
+      : leaf("patch + blocks + merger", `${r.vitDepth} blocks`, fmtN(r.vit));
+  } else {
+    vitKids = leaf("ViT", "无视觉塔", "0");
+  }
+
+  const nTree =
+    `<div class="tree">` +
+    branch("N = Text + ViT", `${fmtN(r.textN)} + ${fmtN(r.vit)}`, fmtN(r.N),
+      branch("Text", "词表 + KDA + MLA + Dense + MoE + norms", fmtN(r.textN), textKids) +
+      branch("ViT", r.freezeVisual ? "冻结" : "MoonViT-V2", fmtN(r.freezeVisual ? 0 : r.vit), vitKids)) +
+    `</div>`;
+
+  // 动态内存
+  const uEq = isNum(r.U)
+    ? `U = (E × 3 × D_PART × D_MOE) × 2 / EP / 1024³ = ${fmtN(r.expertNumel)} × 2 / ${r.EP} / 1024³ = ${fmtG(r.U)} GiB`
+    : `U = null`;
+  const dynLis =
+    li("all-gather", `U`, mem(r.agG)) +
+    li("copy_out", `U`, mem(r.copyG)) +
+    li("prefetch", `prefetch=${r.prefetch} × U`, mem(r.prefG)) +
+    li("foreach_reduce 输入", `2U　fp32`, mem(r.reduceInG)) +
+    (r.gmm ? li("GMM grad_weight", `U_moe`, mem(r.gmmG)) : "");
+  const dynKids =
+    `<div class="nline">${uEq}</div>` +
+    `<div class="tree">` +
+    branch("动态模块", "all-gather + copy + prefetch + reduce + GMM", mem(r.dynG), `<ul class="sub">${dynLis}</ul>`) +
+    `</div>`;
+
+  // 激活值（kimi_memory.py 清单）
+  const actEq = r.recompute || r.offload
+    ? `max(M_KDA, M_MLA, M_MLP, M_MOE) × 1 层 + Embed + LMHead`
+    : `L_KDA×M_KDA + L_MLA×M_MLA + L_DENSE×M_MLP + L_MOE×M_MOE + Embed + LMHead`;
+  const actLis =
+    li("T", `mbs × (seq/CP) = ${r.mbs} × (${r.seq}/${r.CP})`, r.T == null ? "null" : fmtN(r.T)) +
+    li("M_KDA (单层)", `T × (4D + 22×nH×kdaHD + 4×nH×chunk + 4×nH)`, mem(isNum(r.mKDA) ? r.mKDA / GIB : null)) +
+    li("M_MLA (单层)", `T × (4D + 4qLora + 4kvLora + 2qkRope + 8nH(qkNope+qkRope) + 6nH×vHead + 8nH×faStats)`, mem(isNum(r.mMLA) ? r.mMLA / GIB : null)) +
+    li("M_MLP (单层)", `T × (4D + 6×denseInter)`, mem(isNum(r.mMLP) ? r.mMLP / GIB : null)) +
+    li("M_MOE (单层)", `T × (8D + (8topk+4)D_PART + 6(topk+shared)D_MOE)`, mem(isNum(r.mMOE) ? r.mMOE / GIB : null)) +
+    li("Embedding", `T × D × 2`, mem(isNum(r.mEmbed) ? r.mEmbed / GIB : null)) +
+    li("LMHead", `T × D × 2 + ${r.chunkLoss > 0 ? "chunk" : "T"} × V × 2`, mem(isNum(r.mLMHead) ? r.mLMHead / GIB : null)) +
+    (isNum(r.mmMergeG) ? li("mm_merge 拷贝", r.mmMerge > 0 ? `mm_merge × H × 2` : `seq × H × 2 (全量)`, mem(r.mmMergeG)) : "") +
+    li("liveLayers", r.recompute || r.offload ? `1（recompute/offload）` : `${r.L}（全层）`, String(r.liveLayers));
+  const actKids = `<ul class="sub">${actLis}</ul>`;
+
+  const hcclEq = isNum(r.nComm) && isNum(r.hcclMB)
+    ? `n_comm × BUFFSIZE × 2 = ${r.nComm} × ${r.hcclMB} × 2 = ${fmtG(r.hcclG)} GiB`
+    : `n_comm × BUFFSIZE × 2 = null`;
+
+  $("mapBody").innerHTML = [
+    partBlock("权重", COLORS.weight, r.paramG, wEq, nTree),
+    partBlock("优化器", COLORS.adam, r.adamGpu, oEq, `<ul class="sub">${li("AdamW", `exp_avg + exp_avg_sq`, mem(r.adamGpu))}</ul>`),
+    partBlock("梯度", COLORS.grad, r.gradG, gEq, ""),
+    partBlock("动态内存", COLORS.dyn, r.dynG, `all-gather + copy_out + prefetch + foreach_reduce${r.gmm ? " + GMM" : ""}`, dynKids),
+    partBlock("激活值", COLORS.act, r.actG, actEq, actKids),
+    partBlock("HCCL", COLORS.hccl, r.hcclG, hcclEq, ""),
+    partBlock("内存碎片", COLORS.frag, r.fragG, `1 GiB`, ""),
+    partBlock("PTA", COLORS.pta, r.ptaG, `1 GiB`, ""),
+    partBlock("Device OS", COLORS.os, r.osG, `3.5 GiB`, ""),
+  ].join("");
+
+  $("mapFoot").textContent = `N ≈ ${fmtG(r.N * BF16 / GIB)} GiB (bf16) · 激活清单源自 kimi_memory.py`;
+}
+
+function partBlock(name, color, g, eq, inner) {
+  return `<div class="part"><div class="part-h"><div><b style="background:${color}"></b>${name}</div><div class="g">${mem(g)}</div></div><div class="eq">${eq}</div>${inner}</div>`;
+}
+
+function setErr(msg) { $("err").textContent = msg || ""; }
+
+function configUrls(repo) {
+  return [
+    `https://modelscope.cn/models/${repo}/resolve/master/config.json`,
+    `https://www.modelscope.cn/models/${repo}/resolve/master/config.json`,
+    `https://huggingface.co/${repo}/raw/main/config.json`,
+  ];
+}
+
+async function fetchRemoteConfig(repo) {
+  let lastErr;
+  for (const url of configUrls(repo)) {
+    try {
+      const res = await fetch(url, { mode: "cors" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await res.json();
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("拉取失败");
+}
+
+// 解析 KimiLinearConfig / KimiK3Config
+function parseConfig(cfg) {
+  const text = cfg.text_config || cfg.language_config || cfg;
+  const vis = cfg.vision_config || {};
+  const lin = text.linear_attn_config || {};
+  const kdaLayers = (lin.kda_layers || []).length;
+  const mlaLayers = (lin.full_attn_layers || []).length;
+  const layers = pick(text, ["num_hidden_layers"], 0);
+  const kdaL = kdaLayers || pick(text, ["kda_layers_count"], 69);
+  const mlaL = mlaLayers || pick(text, ["mla_layers_count"], 24);
+  return {
+    vocab: pick(text, ["vocab_size"], 0),
+    hidden: pick(text, ["hidden_size"], 0),
+    layers,
+    kdaLayers: kdaL,
+    mlaLayers: mlaL,
+    nHeads: pick(text, ["num_attention_heads"], 0),
+    kdaHeadDim: pick(text, ["kda_head_dim", "head_k_dim"], 128),
+    kdaChunkSize: pick(text, ["kda_chunk_size", "chunk_size"], 64),
+    qLoraRank: pick(text, ["q_lora_rank"], 0),
+    kvLoraRank: pick(text, ["kv_lora_rank"], 0),
+    qkNopeHeadDim: pick(text, ["qk_nope_head_dim"], 0),
+    qkRopeHeadDim: pick(text, ["qk_rope_head_dim"], 0),
+    vHeadDim: pick(text, ["v_head_dim"], 0),
+    faStatsWidth: pick(text, ["fa_stats_width"], 8),
+    experts: pick(text, ["num_experts", "n_routed_experts"], 0),
+    topk: pick(text, ["num_experts_per_tok"], 0),
+    sharedExperts: pick(text, ["num_shared_experts", "n_shared_experts"], 0),
+    moeInter: pick(text, ["moe_intermediate_size", "expert_intermediate_size"], 0),
+    latentMoeDim: pick(text, ["routed_expert_hidden_size", "latent_moe_dim"], 0),
+    denseInter: pick(text, ["intermediate_size"], 0),
+    firstKDense: pick(text, ["first_k_dense_replace"], 1),
+    vitDepth: pick(vis, ["vt_num_hidden_layers", "depth"], 0),
+    vitHidden: pick(vis, ["vt_hidden_size", "hidden_size"], 0),
+    vitInter: pick(vis, ["vt_intermediate_size", "intermediate_size"], 0),
+    vitOut: pick(vis, ["text_hidden_size", "out_hidden_size"], 0),
+    vitPatch: pick(vis, ["patch_size"], 14),
+    vitQkv: pick(vis, ["qkv_hidden_size"], 0),
+    tie: !!(cfg.tie_word_embeddings ?? text.tie_word_embeddings),
+    arch: (cfg.architectures || [cfg.model_type || ""]).join(", "),
+  };
+}
+
+function applyParsedModel(m) {
+  S.model = { ...DEFAULT_K3, ...m };
+  writeForm();
+  render();
+}
+
+let fetchGen = 0;
+async function loadWeight(repo) {
+  if (!repo || repo === S.weightRepo) { render(); return; }
+  const gen = ++fetchGen;
+  S.weightRepo = repo;
+  setErr("");
+  if (repo === "moonshotai/Kimi-K3" || repo === "") {
+    applyParsedModel(DEFAULT_K3);
+    return;
+  }
+  try {
+    const cfg = await fetchRemoteConfig(repo);
+    if (gen !== fetchGen) return;
+    const m = parseConfig(cfg);
+    if (!m.hidden || !m.layers) throw new Error("未能读取 hidden_size / num_hidden_layers");
+    applyParsedModel(m);
+  } catch (e) {
+    if (gen !== fetchGen) return;
+    setErr("拉取 " + repo + " 的 config.json 失败：" + (e && e.message ? e.message : e));
+    applyParsedModel(DEFAULT_K3);
+  }
+}
+
+$("ovModel").addEventListener("change", () => {
+  S.modelName = $("ovModel").value;
+  $("ovRepo").value = "moonshotai/Kimi-K3";
+  loadWeight("moonshotai/Kimi-K3");
+});
+$("ovRepo").addEventListener("change", () => {
+  const r = $("ovRepo").value.trim();
+  if (r) loadWeight(r);
+});
+$("mapBody").addEventListener("click", (e) => {
+  const sum = e.target.closest(".tree summary");
+  if (!sum) return;
+  e.preventDefault();
+  const d = sum.parentElement;
+  if (d && d.tagName === "DETAILS") d.open = !d.open;
+});
+document.querySelectorAll("input, select").forEach((el) => {
+  if (el.id === "ovModel" || el.id === "ovRepo") return;
+  el.addEventListener("input", () => { readForm(); render(); });
+  el.addEventListener("change", () => { readForm(); render(); });
+});
+
+writeForm();
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>KIMI 小工具</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: light only;
+      --bg: #f6f7f9;
+      --ink: #16181d;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --card: #ffffff;
+      --accent: #1783ff;
+      --glow: rgba(23, 131, 255, 0.10);
+      --sans: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #f6f7f9; }
+    body {
+      color: var(--ink);
+      font: 15px/1.5 var(--sans);
+      background:
+        radial-gradient(920px 480px at 8% -8%, var(--glow), transparent 58%),
+        var(--bg);
+    }
+    body::before {
+      content: "";
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image:
+        linear-gradient(rgba(22, 24, 29, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(22, 24, 29, .035) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: radial-gradient(ellipse at 50% 0%, #000 18%, transparent 72%);
+    }
+    .shell { position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 28px 22px 72px; }
+    .brand {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 16px; padding-bottom: 22px; border-bottom: 1px solid var(--line);
+    }
+    .brand h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.04em; }
+    .brand h1 span { color: var(--muted); font-weight: 500; letter-spacing: -0.02em; }
+    .brand .meta {
+      font: 500 11px/1 var(--mono); color: var(--muted); letter-spacing: .16em; text-transform: uppercase;
+    }
+    .brand-links { display: flex; align-items: center; gap: 10px; }
+    .brand-links a {
+      display: inline-flex; align-items: center; gap: 6px;
+      height: 32px; padding: 0 11px;
+      border: 1px solid var(--line); border-radius: 999px;
+      background: var(--card); color: var(--ink);
+      text-decoration: none; font: 600 12px/1 var(--sans);
+    }
+    .brand-links a:hover { border-color: var(--accent); color: var(--accent); }
+    .brand-links svg { width: 14px; height: 14px; }
+    .layout {
+      display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 28px; margin-top: 28px;
+    }
+    nav.mods { display: flex; flex-direction: column; gap: 2px; }
+    nav.mods button {
+      appearance: none; width: 100%; text-align: left; cursor: pointer;
+      background: transparent; color: var(--muted); border: 0;
+      border-left: 1px solid transparent; border-radius: 0;
+      padding: 9px 12px; font: 500 13px/1.3 var(--sans);
+    }
+    nav.mods button:hover { color: var(--ink); }
+    nav.mods button.active {
+      color: var(--ink);
+      border-left-color: var(--accent);
+      background: linear-gradient(90deg, rgba(23, 131, 255, 0.10), transparent 80%);
+    }
+    nav.mods button .n {
+      display: block; font: 500 10px/1 var(--mono); letter-spacing: .12em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 3px;
+    }
+    .panel { min-height: 420px; }
+    .panel[hidden] { display: none; }
+    .kicker {
+      margin: 0 0 14px; font: 500 11px/1 var(--mono); letter-spacing: .18em;
+      text-transform: uppercase; color: var(--accent);
+    }
+    .panel h2 {
+      margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.03em;
+    }
+    .bento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    a.tool {
+      position: relative; overflow: hidden;
+      display: flex; flex-direction: column; justify-content: space-between;
+      min-height: 148px; padding: 20px 20px 18px;
+      text-decoration: none; color: inherit;
+      background: var(--card);
+      border: 1px solid var(--line); border-radius: 14px;
+      transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+    }
+    a.tool::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(115deg, transparent 30%, rgba(23, 131, 255, .06) 50%, transparent 70%);
+      transform: translateX(-120%);
+    }
+    a.tool:hover {
+      border-color: rgba(23, 131, 255, 0.42);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 28px rgba(22, 24, 29, .06);
+    }
+    a.tool:hover::after { animation: shimmer .7s ease; }
+    @keyframes shimmer { to { transform: translateX(120%); } }
+    a.tool .tag {
+      font: 500 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
+    }
+    a.tool h3 { margin: 18px 0 0; font-size: 18px; font-weight: 600; letter-spacing: -0.03em; }
+    a.tool .go {
+      margin-top: 22px; font: 500 12px/1 var(--mono); letter-spacing: .08em; color: var(--ink);
+    }
+    .empty {
+      border: 1px solid var(--line); border-radius: 14px;
+      padding: 28px 24px; background: var(--card);
+      color: var(--muted);
+    }
+    .empty strong { display: block; color: var(--ink); font-size: 16px; margin-bottom: 6px; font-weight: 600; }
+    .empty code { font: 500 12px/1.3 var(--mono); }
+    @media (max-width: 980px) { .bento { grid-template-columns: 1fr; } }
+    @media (max-width: 820px) {
+      .layout { grid-template-columns: 1fr; gap: 18px; }
+      nav.mods { flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 4px; }
+      nav.mods button { flex: 0 0 auto; border-left: 0; border-bottom: 1px solid transparent; padding: 8px 10px; }
+      nav.mods button.active { border-bottom-color: var(--accent); background: rgba(23, 131, 255, 0.08); }
+      .brand { flex-direction: column; align-items: flex-start; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      a.tool, a.tool::after { transition: none; animation: none; }
+      a.tool:hover { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="brand">
+      <h1>KIMI <span>小工具</span></h1>
+      <div class="brand-links">
+        <a href="https://github.com/zyang6/qwen-tools" target="_blank" rel="noopener noreferrer" aria-label="参考仓库">
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>
+          参考
+        </a>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav class="mods" aria-label="工具模块">
+        <button type="button" class="active" data-mod="mem"><span class="n">01</span>显存分析</button>
+        <button type="button" data-mod="data"><span class="n">02</span>数据</button>
+        <button type="button" data-mod="perf"><span class="n">03</span>性能</button>
+        <button type="button" data-mod="reports"><span class="n">04</span>技术报告</button>
+      </nav>
+
+      <main>
+        <section class="panel" id="mod-mem">
+          <p class="kicker">Memory</p>
+          <h2>显存分析</h2>
+          <div class="bento">
+            <a class="tool" href="memory/fsdp.html">
+              <div>
+                <span class="tag">FSDPTurbo</span>
+                <h3>FSDPTurbo 显存建模</h3>
+              </div>
+              <div class="go">打开 →</div>
+            </a>
+            <a class="tool" href="memory/infer.html">
+              <div>
+                <span class="tag">Inference · MoE</span>
+                <h3>推理显存建模</h3>
+              </div>
+              <div class="go">打开 →</div>
+            </a>
+          </div>
+        </section>
+
+        <section class="panel" id="mod-data" hidden>
+          <p class="kicker">Data</p>
+          <h2>数据</h2>
+          <div class="empty">
+            <strong>尚未收录工具</strong>
+            样本、打包与数据通路放在 <code>data/</code>。
+          </div>
+        </section>
+        <section class="panel" id="mod-perf" hidden>
+          <p class="kicker">Perf</p>
+          <h2>性能</h2>
+          <div class="empty">
+            <strong>尚未收录工具</strong>
+            吞吐、耗时与 profiling 放在 <code>perf/</code>。
+          </div>
+        </section>
+        <section class="panel" id="mod-reports" hidden>
+          <p class="kicker">Notes</p>
+          <h2>技术报告</h2>
+          <div class="empty">
+            <strong>尚未收录工具</strong>
+            分析笔记与报告放在 <code>reports/</code>。
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script>
+    const buttons = [...document.querySelectorAll("nav.mods button")];
+    const panels = [...document.querySelectorAll(".panel")];
+    function showMod(id) {
+      buttons.forEach((b) => b.classList.toggle("active", b.dataset.mod === id));
+      panels.forEach((p) => { p.hidden = p.id !== "mod-" + id; });
+    }
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.mod;
+        showMod(id);
+        history.replaceState(null, "", "#" + id);
+      });
+    });
+    const initial = (location.hash || "#mem").replace("#", "");
+    if (buttons.some((b) => b.dataset.mod === initial)) showMod(initial);
+  </script>
+</body>
+</html>
