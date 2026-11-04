@@ -2,7 +2,8 @@
 
 Kimi 模型训练工程工具台。一个仓库、一个入口，按工作面拆成独立模块。
 
-参考 [qwen-tools](https://github.com/zyang6/qwen-tools) 架构，针对 Kimi-K3 模型适配。
+在线入口：[kimi显存分析](https://phillss.github.io/kimi-tools/)
+源码：[kimi显存源码](https://github.com/Phillss/kimi-tools)
 
 ## 模块
 
