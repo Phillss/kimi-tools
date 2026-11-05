@@ -497,20 +497,46 @@ function compute(model, train) {
   const pOk = posOk(P);
   const warns = [], splitWarns = [];
 
-  // 切分校验
+  // 切分校验：按 FSDPTurbo 真实约束（world_size=P，各并行度乘积整除）
+  // 参考：FSDPTurbo/examples/kimi_k3/README.md「并行度约束」
   const checkInt = (name, x) => {
     if (x == null) splitWarns.push(name + " 为空");
     else if (!intOk(x)) splitWarns.push(name + " 须为正整数");
   };
   checkInt("P", P); checkInt("TP", TP); checkInt("EP", EP); checkInt("CP", CP); checkInt("EFSDP", EFSDP);
   const splitOk = intOk(TP) && intOk(EP) && intOk(CP) && intOk(EFSDP);
+
+  // FSDPTurbo 三组乘积整除约束（FSDP/EP/CP 独立 device mesh，不需彼此相乘）
+  // world_size % (fully_shard_parallel_size × tensor_parallel_size) == 0
+  // world_size % (expert_fully_shard_parallel_size × expert_parallel_size) == 0
+  // world_size % (ulysses_parallel_size × tensor_parallel_size) == 0
+  // 工具中 P=world_size=fully_shard_parallel_size（FSDP 主分片），EFSDP=expert_fully_shard_parallel_size
+  // 即：world_size=P 须被 (FSDP×TP)、(EFSDP×EP)、(CP×TP) 分别整除
+  //     其中 FSDP=P，故 P 须被 (P×TP) 整除 → TP 须整除 1（恒成立，TP>0 即可）
+  //     真实校验：P 须被 (EFSDP×EP) 整除，P 须被 (CP×TP) 整除
   if (splitOk && intOk(P)) {
-    if (P % TP !== 0) splitWarns.push("P=" + P + " 不能被 TP=" + TP + " 整除");
-    if (P % EP !== 0) splitWarns.push("P=" + P + " 不能被 EP=" + EP + " 整除");
-    if (P % CP !== 0) splitWarns.push("P=" + P + " 不能被 CP=" + CP + " 整除");
-    if (EP % EFSDP !== 0) splitWarns.push("EP=" + EP + " 不能被 EFSDP=" + EFSDP + " 整除");
+    const epShard = EFSDP * EP;        // 专家侧总并行度
+    const cpShard = CP * TP;           // CP 侧总并行度（ulysses×TP）
+    if (P % epShard !== 0) splitWarns.push("P=" + P + " 不能被 EFSDP×EP=" + epShard + " 整除");
+    if (P % cpShard !== 0) splitWarns.push("P=" + P + " 不能被 CP×TP=" + cpShard + " 整除");
+    if (EP > p.E) splitWarns.push("EP=" + EP + " 超过专家数 " + p.E + "，切分无意义");
+    if (EFSDP > EP) splitWarns.push("EFSDP=" + EFSDP + " 不能大于 EP=" + EP);
   }
-  const cardsOk = splitOk && intOk(P) && (P % TP === 0) && (P % EP === 0) && (P % CP === 0) && (EP % EFSDP === 0);
+
+  // Kimi-K3 专属约束（参考 kimi_k3 README）
+  // 1. ulysses_parallel_size 必须整除 KDA num_heads 和 MLA query head 数（均为 96）
+  if (splitOk && intOk(CP) && CP > 1 && p.nH % CP !== 0) {
+    splitWarns.push("CP=" + CP + " 不能整除 num_heads=" + p.nH + "（KDA/MLA 要求）");
+  }
+  // 2. KDA head_k_dim 不能超过 256
+  if (p.kdaHeadDim > 256) {
+    splitWarns.push("KDA head_k_dim=" + p.kdaHeadDim + " 超过 256 上限");
+  }
+  // 3. KCP 模式下 TP 必须为 1（工具暂未单独建模 KCP，但 CP>1 且 TP>1 时按 Ulysses 校验，KCP 约束预留）
+  //    注：KCP 与 Ulysses 互斥，工具当前只建模 Ulysses CP
+
+  // 校验只产生警告，不阻断计算（参考 qwen-tools 做法：降级显示近似值）
+  const cardsOk = splitOk && intOk(P);
 
   // 静态：N/P × 12（fp32 参数 + Adam），Adam CPU 则优化器为 0
   const perCard = pOk && cardsOk ? p.N / P : null;
@@ -524,9 +550,10 @@ function compute(model, train) {
   const gradG = isNum(perCard) ? perCard * BF16 * 2 / GIB : null;  // bf16 grad = 2×, fp32 reduce → 简化为 4×perCard/GIB
 
   // 动态内存：FSDP wrap=experts 模式（Kimi-K3 默认）
-  // U = (gate_up + down) × 2 / EP （路由专家 per-rank）
+  // U = (gate_up + down) × 2 / (EFSDP × EP) （路由专家 per-rank，含 EFSDP 全分片）
   const expertNumel = p.moeRouted;  // E × 3 × D_PART × D_MOE
-  const expertPerRank = EP > 0 ? expertNumel / EP : null;
+  const epShardTotal = EFSDP * EP;  // 专家侧总分片度
+  const expertPerRank = epShardTotal > 0 ? expertNumel / epShardTotal : null;
   const U = isNum(expertPerRank) ? expertPerRank * BF16 / GIB : null;  // all-gather 单位
   const prefetch = train.prefetch || 0;
   const prefG = isNum(U) ? prefetch * U : 0;
@@ -711,7 +738,7 @@ function render() {
   $("err").textContent = (r.warns || []).join("；");
   $("splitErr").textContent = (r.splitWarns || []).join("；");
   $("splitHint").textContent = r.cardsOk
-    ? `DP=FSDP=${r.P}/(TP×CP)=${r.P}/(${r.TP}×${r.CP})，EDP=EP/EFSDP=${r.EP}/${r.EFSDP}`
+    ? `world_size=P=${r.P} · 须被 EFSDP×EP=${r.EFSDP * r.EP}、CP×TP=${r.CP * r.TP} 整除 · EP=${r.EP}/${r.E}experts`
     : "";
   ["ovP", "ovTP", "ovEP", "ovCP", "ovEFSDP"].forEach((id) => {
     const el = $(id);
@@ -786,7 +813,7 @@ function render() {
 
   // 动态内存
   const uEq = isNum(r.U)
-    ? `U = (E × 3 × D_PART × D_MOE) × 2 / EP / 1024³ = ${fmtN(r.expertNumel)} × 2 / ${r.EP} / 1024³ = ${fmtG(r.U)} GiB`
+    ? `U = (E × 3 × D_PART × D_MOE) × 2 / (EFSDP×EP) / 1024³ = ${fmtN(r.expertNumel)} × 2 / ${r.EFSDP * r.EP} / 1024³ = ${fmtG(r.U)} GiB`
     : `U = null`;
   const dynLis =
     li("all-gather", `U`, mem(r.agG)) +

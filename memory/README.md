@@ -85,24 +85,24 @@ n_comm = 1 + [EP>1] + [CP>1] + [TP>1]
 
 ## 并行度约束（FSDPTurbo）
 
+`torchrun` 的总进程数（world_size=P）必须满足以下整除关系（三组独立 device mesh，不需彼此相乘）：
+
 ```text
 world_size % (fully_shard_parallel_size × tensor_parallel_size) == 0
 world_size % (expert_fully_shard_parallel_size × expert_parallel_size) == 0
 world_size % (ulysses_parallel_size × tensor_parallel_size) == 0
 ```
 
-FSDP、EP、CP 使用独立 device mesh，三组并行度不需彼此相乘。
+工具中 P=world_size=fully_shard_parallel_size，EFSDP=expert_fully_shard_parallel_size，
+真实校验为：P 须被 `(EFSDP×EP)` 和 `(CP×TP)` 分别整除。
 
-默认配置（参考 `examples/kimi_k3/config.yaml`）：
+Kimi-K3 专属约束：
+- `ulysses_parallel_size`(CP) 必须整除 KDA `num_heads`(96) 和 MLA query head 数
+- KDA `head_k_dim` 不能超过 256
+- EP 不能超过专家数 896
+- KCP 模式下 TP 必须为 1（与 Ulysses 互斥）
 
-```yaml
-distributed:
-  fully_shard_parallel_size: 16   # P
-  tensor_parallel_size: 1         # TP
-  ulysses_parallel_size: 2        # CP
-  expert_parallel_size: 16        # EP
-  expert_fully_shard_parallel_size: 1  # EFSDP
-```
+校验失败只产生警告，不阻断计算（降级显示近似值）。
 
 ## 推理口径
 
